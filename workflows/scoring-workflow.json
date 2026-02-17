@@ -1,0 +1,264 @@
+{
+  "name": "Scoring Workflow - AI Lead Analysis",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "score-trigger-1",
+      "name": "Workflow Input",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Prepare lead data for AI scoring analysis\nconst items = $input.all();\n\nreturn items.map(item => {\n  const lead = item.json;\n  \n  // Build a summary for AI analysis\n  const summary = `\nBusiness: ${lead.businessName}\nCategory: ${lead.nicheCategory}\nLocation: ${lead.city}, ${lead.country}\nWebsite: ${lead.website || 'No website'}\nEmail: ${lead.email || 'No email found'}\nPhone: ${lead.phone || 'No phone found'}\nOnline Rating: ${lead.rating}/5 (${lead.reviewCount} reviews)\nWebsite Title: ${lead.pageTitle || 'N/A'}\nMeta Description: ${lead.metaDescription || 'N/A'}\nHas Contact Page: ${lead.hasContactPage ? 'Yes' : 'No'}\nSocial Media Presence: ${(lead.socialLinks || []).length} profiles found\nWebsite Scraped: ${lead.websiteScraped ? 'Yes' : 'No'}\n`.trim();\n  \n  return {\n    json: {\n      ...lead,\n      aiAnalysisSummary: summary\n    }\n  };\n});"
+      },
+      "id": "score-prepare-2",
+      "name": "Prepare AI Analysis",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        300,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list",
+          "cachedResultName": "GPT-4o Mini"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "You are an expert AI sales analyst specializing in identifying small businesses that would benefit from AI automation services (chatbots, appointment booking, CRM automation, lead capture, etc.).\n\nAnalyze the following business lead and provide:\n1. A lead score from 1-10 (10 = highest probability of buying AI automation)\n2. Key reasons why this business is a good/bad AI automation prospect\n3. Specific AI automation services that would benefit this business\n4. Confidence level (low/medium/high)\n\nScoring Criteria:\n- Businesses WITHOUT chatbots/automation = +3 points\n- Outdated or basic website = +2 points\n- Low online presence/reviews = +2 points\n- Service-based business that handles appointments = +2 points\n- Has contact form but no live chat = +1 point\n- Small/local business (not chain) = +1 point\n- No website at all = -1 point (hard to reach)\n- Very low reviews (<10) = might be very new or struggling = +/-0\n\nBe realistic and helpful. Focus on businesses that genuinely need and could afford AI automation.\n\nRespond in this exact JSON format:\n{\n  \"leadScore\": <number 1-10>,\n  \"confidence\": \"<low|medium|high>\",\n  \"isGoodProspect\": <true|false>,\n  \"reasoning\": \"<2-3 sentences explaining the score>\",\n  \"suggestedServices\": [\"<service1>\", \"<service2>\"],\n  \"redFlags\": [\"<any concerns>\"],\n  \"outreachTip\": \"<personalized suggestion for reaching out>\"\n}"
+            },
+            {
+              "role": "user",
+              "content": "={{ $json.aiAnalysisSummary }}"
+            }
+          ]
+        },
+        "jsonOutput": true,
+        "options": {
+          "temperature": 0.3,
+          "maxTokens": 500
+        }
+      },
+      "id": "score-openai-3",
+      "name": "OpenAI Lead Analysis",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1,
+      "position": [
+        500,
+        200
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai-cred",
+          "name": "OpenAI API"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "model": "claude-3-haiku-20240307",
+        "messages": {
+          "values": [
+            {
+              "content": "You are an expert AI sales analyst specializing in identifying small businesses that would benefit from AI automation services (chatbots, appointment booking, CRM automation, lead capture, etc.).\n\nAnalyze the following business lead and provide:\n1. A lead score from 1-10 (10 = highest probability of buying AI automation)\n2. Key reasons why this business is a good/bad AI automation prospect\n3. Specific AI automation services that would benefit this business\n4. Confidence level (low/medium/high)\n\nScoring Criteria:\n- Businesses WITHOUT chatbots/automation = +3 points\n- Outdated or basic website = +2 points\n- Low online presence/reviews = +2 points\n- Service-based business that handles appointments = +2 points\n- Has contact form but no live chat = +1 point\n- Small/local business (not chain) = +1 point\n- No website at all = -1 point (hard to reach)\n- Very low reviews (<10) = might be very new or struggling = +/-0\n\nBe realistic and helpful. Focus on businesses that genuinely need and could afford AI automation.\n\nRespond in this exact JSON format:\n{\n  \"leadScore\": <number 1-10>,\n  \"confidence\": \"<low|medium|high>\",\n  \"isGoodProspect\": <true|false>,\n  \"reasoning\": \"<2-3 sentences explaining the score>\",\n  \"suggestedServices\": [\"<service1>\", \"<service2>\"],\n  \"redFlags\": [\"<any concerns>\"],\n  \"outreachTip\": \"<personalized suggestion for reaching out>\"\n}"
+            },
+            {
+              "role": "user",
+              "content": "={{ $json.aiAnalysisSummary }}"
+            }
+          ]
+        },
+        "options": {
+          "temperature": 0.3,
+          "maxTokensToSample": 500
+        }
+      },
+      "id": "score-anthropic-4",
+      "name": "Claude Lead Analysis",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1,
+      "position": [
+        500,
+        400
+      ],
+      "credentials": {
+        "anthropicApi": {
+          "id": "anthropic-cred",
+          "name": "Anthropic API"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "notes": "Alternative AI provider"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Fallback rule-based scoring when AI is unavailable\nconst items = $input.all();\n\nfunction calculateRuleBasedScore(lead) {\n  let score = 5; // Base score\n  const reasons = [];\n  const suggestedServices = [];\n  \n  // Website presence scoring\n  if (!lead.website) {\n    score -= 1;\n    reasons.push('No website found - harder to reach');\n  } else {\n    score += 1;\n    reasons.push('Has website presence');\n    \n    // Check for basic/outdated indicators\n    if (!lead.metaDescription || lead.metaDescription.length < 50) {\n      score += 1;\n      reasons.push('Website may lack SEO optimization');\n      suggestedServices.push('Website chatbot');\n    }\n  }\n  \n  // Contact information scoring\n  if (lead.email && !lead.email.toLowerCase().startsWith('info@')) {\n    score += 1;\n    reasons.push('Has direct email contact');\n  }\n  \n  if (lead.phone) {\n    score += 0.5;\n    reasons.push('Has phone number');\n    suggestedServices.push('AI appointment booking');\n  }\n  \n  // Online presence scoring\n  if (lead.reviewCount < 50) {\n    score += 1;\n    reasons.push('Lower online presence - likely needs digital help');\n  }\n  \n  if (lead.rating && lead.rating < 4.5) {\n    score += 0.5;\n    reasons.push('Could benefit from reputation management');\n    suggestedServices.push('Review response automation');\n  }\n  \n  // Service business indicators\n  const serviceKeywords = ['clinic', 'service', 'repair', 'cleaning', 'consultant', 'center', 'therapy'];\n  const isServiceBusiness = serviceKeywords.some(kw => \n    (lead.businessName || '').toLowerCase().includes(kw) || \n    (lead.nicheCategory || '').toLowerCase().includes(kw)\n  );\n  \n  if (isServiceBusiness) {\n    score += 1;\n    reasons.push('Service-based business - ideal for automation');\n    suggestedServices.push('Lead capture form');\n    suggestedServices.push('CRM automation');\n  }\n  \n  // Social media presence\n  if (!lead.socialLinks || lead.socialLinks.length < 2) {\n    score += 0.5;\n    reasons.push('Limited social media presence');\n  }\n  \n  // Ensure score is within bounds\n  score = Math.min(10, Math.max(1, Math.round(score)));\n  \n  return {\n    leadScore: score,\n    confidence: score >= 7 ? 'high' : score >= 5 ? 'medium' : 'low',\n    isGoodProspect: score >= 5,\n    reasoning: reasons.slice(0, 3).join('. '),\n    suggestedServices: [...new Set(suggestedServices)].slice(0, 3),\n    redFlags: score < 5 ? ['May not be ready for AI automation'] : [],\n    outreachTip: `Mention how AI automation can help ${lead.nicheCategory || 'their business'} save time and capture more leads.`\n  };\n}\n\nreturn items.map(item => {\n  const lead = item.json;\n  const scoring = calculateRuleBasedScore(lead);\n  \n  return {\n    json: {\n      ...lead,\n      ...scoring,\n      scoringMethod: 'rule_based'\n    }\n  };\n});"
+      },
+      "id": "score-fallback-5",
+      "name": "Rule-Based Scoring Fallback",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        500,
+        600
+      ],
+      "notes": "Fallback when AI providers unavailable"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Parse and merge AI scoring results\nconst items = $input.all();\nconst originalLeads = $('Prepare AI Analysis').all();\n\nreturn items.map((item, index) => {\n  const aiResponse = item.json;\n  const originalLead = originalLeads[index]?.json || {};\n  \n  let scoring = {};\n  \n  // Try to parse AI response\n  try {\n    if (typeof aiResponse === 'object' && aiResponse.leadScore !== undefined) {\n      scoring = aiResponse;\n    } else if (aiResponse.message && aiResponse.message.content) {\n      // Parse from message content\n      const content = aiResponse.message.content;\n      const jsonMatch = content.match(/\\{[\\s\\S]*\\}/);\n      if (jsonMatch) {\n        scoring = JSON.parse(jsonMatch[0]);\n      }\n    } else if (aiResponse.content) {\n      const jsonMatch = aiResponse.content.match(/\\{[\\s\\S]*\\}/);\n      if (jsonMatch) {\n        scoring = JSON.parse(jsonMatch[0]);\n      }\n    }\n  } catch (e) {\n    // Use default scoring if parsing fails\n    scoring = {\n      leadScore: 5,\n      confidence: 'low',\n      isGoodProspect: true,\n      reasoning: 'AI analysis could not be parsed',\n      suggestedServices: ['General AI automation'],\n      redFlags: ['Requires manual review'],\n      outreachTip: 'Reach out to learn more about their needs'\n    };\n  }\n  \n  return {\n    json: {\n      ...originalLead,\n      leadScore: scoring.leadScore || 5,\n      confidence: scoring.confidence || 'medium',\n      isGoodProspect: scoring.isGoodProspect !== false,\n      aiReasoning: scoring.reasoning || '',\n      suggestedServices: scoring.suggestedServices || [],\n      redFlags: scoring.redFlags || [],\n      outreachTip: scoring.outreachTip || '',\n      scoringMethod: 'ai_analysis',\n      scoredAt: new Date().toISOString()\n    }\n  };\n});"
+      },
+      "id": "score-parse-ai-6",
+      "name": "Parse AI Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        740,
+        300
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "score-merge-7",
+      "name": "Merge Scoring Results",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2.1,
+      "position": [
+        940,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Final scoring output preparation\nconst items = $input.all();\n\nreturn items.map(item => {\n  const lead = item.json;\n  \n  // Generate a human-readable reason summary\n  const prospectReason = lead.isGoodProspect \n    ? `Good AI automation prospect (Score: ${lead.leadScore}/10). ${lead.aiReasoning || lead.reasoning || 'Service business that could benefit from automation.'}`\n    : `Lower priority prospect (Score: ${lead.leadScore}/10). ${lead.aiReasoning || lead.reasoning || 'May need more research.'}`;\n  \n  return {\n    json: {\n      businessName: lead.businessName,\n      ownerFirstName: lead.ownerFirstName,\n      email: lead.email,\n      phone: lead.phone,\n      website: lead.website,\n      city: lead.city,\n      country: lead.country,\n      nicheCategory: lead.nicheCategory,\n      leadScore: lead.leadScore,\n      prospectReason: prospectReason,\n      suggestedServices: (lead.suggestedServices || []).join(', '),\n      outreachTip: lead.outreachTip || '',\n      confidence: lead.confidence,\n      source: lead.source,\n      rating: lead.rating,\n      reviewCount: lead.reviewCount,\n      scoredAt: lead.scoredAt || new Date().toISOString()\n    }\n  };\n});"
+      },
+      "id": "score-final-8",
+      "name": "Prepare Final Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1140,
+        400
+      ]
+    }
+  ],
+  "connections": {
+    "Workflow Input": {
+      "main": [
+        [
+          {
+            "node": "Prepare AI Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare AI Analysis": {
+      "main": [
+        [
+          {
+            "node": "OpenAI Lead Analysis",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Rule-Based Scoring Fallback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Lead Analysis": {
+      "main": [
+        [
+          {
+            "node": "Parse AI Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude Lead Analysis": {
+      "main": [
+        [
+          {
+            "node": "Parse AI Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse AI Response": {
+      "main": [
+        [
+          {
+            "node": "Merge Scoring Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rule-Based Scoring Fallback": {
+      "main": [
+        [
+          {
+            "node": "Merge Scoring Results",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge Scoring Results": {
+      "main": [
+        [
+          {
+            "node": "Prepare Final Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1.0.0",
+  "meta": {
+    "instanceId": "scoring-workflow"
+  },
+  "id": "scoring-workflow",
+  "tags": [
+    {
+      "name": "lead-generation",
+      "id": "tag-1"
+    },
+    {
+      "name": "ai-scoring",
+      "id": "tag-2"
+    }
+  ]
+}

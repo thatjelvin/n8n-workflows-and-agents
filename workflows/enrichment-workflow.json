@@ -1,0 +1,396 @@
+{
+  "name": "Enrichment Workflow - Lead Data Enhancement",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "enrich-trigger-1",
+      "name": "Workflow Input",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [
+        100,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Prepare lead data for enrichment\nconst items = $input.all();\n\nreturn items.map(item => {\n  const lead = item.json;\n  \n  // Extract domain from website if available\n  let domain = '';\n  if (lead.website) {\n    try {\n      const url = new URL(lead.website.startsWith('http') ? lead.website : `https://${lead.website}`);\n      domain = url.hostname.replace('www.', '');\n    } catch (e) {\n      domain = '';\n    }\n  }\n  \n  return {\n    json: {\n      ...lead,\n      domain: domain,\n      needsWebsiteScrape: !!lead.website && !lead.email,\n      needsPhoneLookup: !lead.phone,\n      enrichmentStarted: new Date().toISOString()\n    }\n  };\n});"
+      },
+      "id": "enrich-prepare-2",
+      "name": "Prepare for Enrichment",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        300,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "has-website",
+              "leftValue": "={{ $json.website }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "enrich-has-website-3",
+      "name": "Has Website?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        500,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.website }}",
+        "options": {
+          "timeout": 15000,
+          "redirect": {
+            "redirect": {
+              "followRedirects": true,
+              "maxRedirects": 5
+            }
+          },
+          "response": {
+            "response": {
+              "fullResponse": false,
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "id": "enrich-fetch-website-4",
+      "name": "Fetch Website",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        700,
+        300
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "extractHtmlContent",
+        "extractionValues": {
+          "values": [
+            {
+              "key": "pageTitle",
+              "cssSelector": "title"
+            },
+            {
+              "key": "metaDescription",
+              "cssSelector": "meta[name='description']",
+              "returnValue": "attribute",
+              "attribute": "content"
+            },
+            {
+              "key": "h1Tags",
+              "cssSelector": "h1",
+              "returnArray": true
+            },
+            {
+              "key": "emails",
+              "cssSelector": "a[href^='mailto:']",
+              "returnValue": "attribute",
+              "attribute": "href",
+              "returnArray": true
+            },
+            {
+              "key": "phones",
+              "cssSelector": "a[href^='tel:']",
+              "returnValue": "attribute",
+              "attribute": "href",
+              "returnArray": true
+            },
+            {
+              "key": "socialLinks",
+              "cssSelector": "a[href*='facebook.com'], a[href*='linkedin.com'], a[href*='twitter.com'], a[href*='instagram.com']",
+              "returnValue": "attribute",
+              "attribute": "href",
+              "returnArray": true
+            },
+            {
+              "key": "contactPageLink",
+              "cssSelector": "a[href*='contact'], a[href*='about']",
+              "returnValue": "attribute",
+              "attribute": "href",
+              "returnArray": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "enrich-html-extract-5",
+      "name": "Extract HTML Data",
+      "type": "n8n-nodes-base.html",
+      "typeVersion": 1.2,
+      "position": [
+        900,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Parse and clean extracted website data\nconst items = $input.all();\n\nfunction extractEmails(text) {\n  const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}/gi;\n  const matches = text.match(emailRegex) || [];\n  // Filter out common generic emails\n  const genericPatterns = ['noreply', 'no-reply', 'donotreply', 'example.com', 'test.com'];\n  return matches.filter(email => {\n    const lower = email.toLowerCase();\n    return !genericPatterns.some(pattern => lower.includes(pattern));\n  });\n}\n\nfunction extractPhones(text) {\n  // US/Canada phone pattern\n  const phoneRegex = /(?:\\+?1[-.]?)?\\(?\\d{3}\\)?[-.]?\\d{3}[-.]?\\d{4}/g;\n  return text.match(phoneRegex) || [];\n}\n\nfunction cleanEmail(href) {\n  return href.replace('mailto:', '').split('?')[0].trim();\n}\n\nfunction cleanPhone(href) {\n  return href.replace('tel:', '').replace(/[^0-9+]/g, '');\n}\n\nfunction inferOwnerName(text, businessName) {\n  // Look for common patterns like \"Founded by\", \"Owner:\", etc.\n  const patterns = [\n    /(?:owner|founder|ceo|president|proprietor)[:\\s]+([A-Z][a-z]+(?:\\s[A-Z][a-z]+)?)/i,\n    /(?:Dr\\.?|Mr\\.?|Ms\\.?|Mrs\\.?)\\s+([A-Z][a-z]+(?:\\s[A-Z][a-z]+)?)/i,\n    /([A-Z][a-z]+(?:\\s[A-Z][a-z]+)?)(?:,\\s*(?:Owner|Founder|CEO|President))/i\n  ];\n  \n  for (const pattern of patterns) {\n    const match = text.match(pattern);\n    if (match && match[1]) {\n      return match[1].trim();\n    }\n  }\n  \n  return '';\n}\n\nreturn items.map(item => {\n  const data = item.json;\n  const originalLead = $('Prepare for Enrichment').first().json;\n  \n  // Extract emails from href attributes\n  const extractedEmails = (data.emails || [])\n    .map(href => cleanEmail(href))\n    .filter(email => email && email.includes('@'));\n  \n  // Extract phones from href attributes\n  const extractedPhones = (data.phones || [])\n    .map(href => cleanPhone(href))\n    .filter(phone => phone.length >= 10);\n  \n  // Try to find owner name from page content\n  const pageText = [data.pageTitle, ...(data.h1Tags || [])].join(' ');\n  const ownerName = inferOwnerName(pageText, originalLead.businessName);\n  \n  // Prioritize personal/direct emails over info@\n  const sortedEmails = extractedEmails.sort((a, b) => {\n    const aGeneric = a.toLowerCase().startsWith('info@') || a.toLowerCase().startsWith('contact@');\n    const bGeneric = b.toLowerCase().startsWith('info@') || b.toLowerCase().startsWith('contact@');\n    if (aGeneric && !bGeneric) return 1;\n    if (!aGeneric && bGeneric) return -1;\n    return 0;\n  });\n  \n  return {\n    json: {\n      ...originalLead,\n      pageTitle: data.pageTitle || '',\n      metaDescription: data.metaDescription || '',\n      email: sortedEmails[0] || originalLead.email || '',\n      allEmails: sortedEmails,\n      phone: extractedPhones[0] || originalLead.phone || '',\n      allPhones: extractedPhones,\n      ownerFirstName: ownerName.split(' ')[0] || '',\n      ownerFullName: ownerName,\n      socialLinks: data.socialLinks || [],\n      hasContactPage: (data.contactPageLink || []).length > 0,\n      websiteScraped: true\n    }\n  };\n});"
+      },
+      "id": "enrich-parse-website-6",
+      "name": "Parse Website Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// For leads without website, add placeholder data\nconst items = $input.all();\n\nreturn items.map(item => ({\n  json: {\n    ...item.json,\n    pageTitle: '',\n    metaDescription: '',\n    email: item.json.email || '',\n    allEmails: [],\n    phone: item.json.phone || '',\n    allPhones: [],\n    ownerFirstName: '',\n    ownerFullName: '',\n    socialLinks: [],\n    hasContactPage: false,\n    websiteScraped: false,\n    noWebsiteFound: true\n  }\n}));"
+      },
+      "id": "enrich-no-website-7",
+      "name": "No Website Available",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        700,
+        500
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "enrich-merge-8",
+      "name": "Merge Results",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2.1,
+      "position": [
+        1300,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.hunter.io/v2/domain-search",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "domain",
+              "value": "={{ $json.domain }}"
+            },
+            {
+              "name": "api_key",
+              "value": "={{ $credentials.apiKey }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "enrich-hunter-9",
+      "name": "Hunter.io Email Lookup",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1500,
+        300
+      ],
+      "notes": "Optional: Hunter.io for email discovery",
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "hunter-io-cred",
+          "name": "Hunter.io API"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Merge Hunter.io data with existing lead data\nconst items = $input.all();\n\nreturn items.map(item => {\n  const data = item.json;\n  const originalLead = $('Merge Results').first().json;\n  \n  // Extract Hunter.io emails if available\n  let hunterEmails = [];\n  if (data.data && data.data.emails) {\n    hunterEmails = data.data.emails\n      .filter(e => e.type === 'personal' || !originalLead.email)\n      .map(e => e.value)\n      .slice(0, 3);\n  }\n  \n  // Use Hunter.io email if better than existing\n  const bestEmail = hunterEmails.find(e => !e.toLowerCase().startsWith('info@')) || \n                    originalLead.email || \n                    hunterEmails[0] || '';\n  \n  return {\n    json: {\n      ...originalLead,\n      email: bestEmail,\n      hunterEmails: hunterEmails,\n      hunterEnriched: hunterEmails.length > 0\n    }\n  };\n});"
+      },
+      "id": "enrich-merge-hunter-10",
+      "name": "Merge Hunter Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1700,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Final enrichment cleanup and validation\nconst items = $input.all();\n\nreturn items.map(item => {\n  const lead = item.json;\n  \n  // Extract city and country from address\n  const addressParts = (lead.address || '').split(',').map(p => p.trim());\n  const city = addressParts.length >= 2 ? addressParts[addressParts.length - 2] : '';\n  const country = 'USA'; // Default for US-focused search\n  \n  // Infer owner first name from email if not found\n  let ownerFirstName = lead.ownerFirstName;\n  if (!ownerFirstName && lead.email) {\n    const emailPrefix = lead.email.split('@')[0];\n    // Common patterns: firstname.lastname, firstname_lastname, firstnamelastname\n    const nameParts = emailPrefix.split(/[._-]/);\n    if (nameParts.length >= 1 && nameParts[0].length > 2) {\n      const possibleName = nameParts[0];\n      // Check if it looks like a name (not generic)\n      if (!/^(info|contact|admin|support|hello|hi|sales)$/i.test(possibleName)) {\n        ownerFirstName = possibleName.charAt(0).toUpperCase() + possibleName.slice(1).toLowerCase();\n      }\n    }\n  }\n  \n  return {\n    json: {\n      businessName: lead.businessName || '',\n      ownerFirstName: ownerFirstName || 'Business Owner',\n      email: lead.email || '',\n      phone: lead.phone || '',\n      website: lead.website || '',\n      city: city,\n      country: country,\n      address: lead.address || '',\n      nicheCategory: lead.searchNiche || lead.categories || '',\n      rating: lead.rating || 0,\n      reviewCount: lead.reviewCount || 0,\n      source: lead.source || 'unknown',\n      pageTitle: lead.pageTitle || '',\n      metaDescription: lead.metaDescription || '',\n      socialLinks: lead.socialLinks || [],\n      hasContactPage: lead.hasContactPage || false,\n      websiteScraped: lead.websiteScraped || false,\n      enrichedAt: new Date().toISOString()\n    }\n  };\n});"
+      },
+      "id": "enrich-final-11",
+      "name": "Final Cleanup",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1900,
+        400
+      ]
+    }
+  ],
+  "connections": {
+    "Workflow Input": {
+      "main": [
+        [
+          {
+            "node": "Prepare for Enrichment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare for Enrichment": {
+      "main": [
+        [
+          {
+            "node": "Has Website?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Website?": {
+      "main": [
+        [
+          {
+            "node": "Fetch Website",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Website Available",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Website": {
+      "main": [
+        [
+          {
+            "node": "Extract HTML Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract HTML Data": {
+      "main": [
+        [
+          {
+            "node": "Parse Website Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Website Data": {
+      "main": [
+        [
+          {
+            "node": "Merge Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "No Website Available": {
+      "main": [
+        [
+          {
+            "node": "Merge Results",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge Results": {
+      "main": [
+        [
+          {
+            "node": "Hunter.io Email Lookup",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Hunter.io Email Lookup": {
+      "main": [
+        [
+          {
+            "node": "Merge Hunter Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Hunter Data": {
+      "main": [
+        [
+          {
+            "node": "Final Cleanup",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1.0.0",
+  "meta": {
+    "instanceId": "enrichment-workflow"
+  },
+  "id": "enrichment-workflow",
+  "tags": [
+    {
+      "name": "lead-generation",
+      "id": "tag-1"
+    },
+    {
+      "name": "enrichment",
+      "id": "tag-2"
+    }
+  ]
+}
