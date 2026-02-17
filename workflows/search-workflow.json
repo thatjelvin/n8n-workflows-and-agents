@@ -15,7 +15,7 @@
     {
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "// Extract search parameters from input\nconst input = $input.first().json;\n\nconst searchParams = {\n  query: input.query || 'physiotherapy clinic near New York',\n  niche: input.niche || 'physiotherapy clinic',\n  location: input.location || 'New York, NY',\n  maxResults: input.maxResults || 20\n};\n\n// Prepare Google Maps search URL\n// Note: In production, use official Google Places API\nconst encodedQuery = encodeURIComponent(searchParams.query);\n\nreturn [{\n  json: {\n    ...searchParams,\n    searchUrl: `https://www.google.com/maps/search/${encodedQuery}`,\n    placesApiUrl: `https://maps.googleapis.com/maps/api/place/textsearch/json`,\n    timestamp: new Date().toISOString()\n  }\n}];"
+        "jsCode": "// Extract search parameters from input\nconst input = $input.first().json;\n\nconst searchParams = {\n  query: input.query || 'physiotherapy clinic near New York',\n  niche: input.niche || 'physiotherapy clinic',\n  location: input.location || 'New York, NY',\n  maxResults: input.maxResults || 20\n};\n\nreturn [{\n  json: {\n    ...searchParams,\n    placesApiUrl: `https://maps.googleapis.com/maps/api/place/textsearch/json`,\n    timestamp: new Date().toISOString()\n  }\n}];"
       },
       "id": "search-setup-2",
       "name": "Prepare Search Query",
@@ -210,7 +210,7 @@
     {
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "// Add search metadata to each lead\nconst items = $input.all();\nconst inputData = $('Prepare Search Query').first().json;\n\nreturn items.map(item => ({\n  json: {\n    ...item.json,\n    searchNiche: inputData.niche,\n    searchLocation: inputData.location,\n    searchQuery: inputData.query,\n    discoveredAt: new Date().toISOString()\n  }\n}));"
+        "jsCode": "// Add search metadata to each lead\nconst items = $input.all();\nconst inputData = $('Prepare Search Query').first().json;\n\nreturn items.map(item => ({\n  json: {\n    ...item.json,\n    nicheCategory: inputData.niche,\n    searchLocation: inputData.location,\n    searchQuery: inputData.query,\n    discoveredAt: new Date().toISOString()\n  }\n}));"
       },
       "id": "search-metadata-8",
       "name": "Add Search Metadata",

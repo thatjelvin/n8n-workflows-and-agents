@@ -83,7 +83,7 @@
         },
         "options": {
           "temperature": 0.3,
-          "maxTokensToSample": 500
+          "max_tokens": 500
         }
       },
       "id": "score-anthropic-4",
