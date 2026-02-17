@@ -1,0 +1,232 @@
+{
+  "name": "Export Workflow - Excel Generation",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "export-trigger-1",
+      "name": "Workflow Input",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Prepare data for Excel export with proper formatting\nconst items = $input.all();\n\n// Sort by lead score (highest first)\nconst sortedItems = items.sort((a, b) => \n  (b.json.leadScore || 0) - (a.json.leadScore || 0)\n);\n\n// Format data for Excel columns\nreturn sortedItems.map((item, index) => {\n  const lead = item.json;\n  \n  return {\n    json: {\n      'Rank': index + 1,\n      'Business Name': lead.businessName || '',\n      'Owner First Name': lead.ownerFirstName || 'Business Owner',\n      'Email': lead.email || '',\n      'Phone': lead.phone || '',\n      'Website': lead.website || '',\n      'City': lead.city || '',\n      'Country': lead.country || 'USA',\n      'Niche Category': lead.nicheCategory || '',\n      'Lead Score': lead.leadScore || 0,\n      'AI Confidence': lead.confidence || 'N/A',\n      'Prospect Reason': lead.prospectReason || '',\n      'Suggested Services': lead.suggestedServices || '',\n      'Outreach Tip': lead.outreachTip || '',\n      'Online Rating': lead.rating || 'N/A',\n      'Review Count': lead.reviewCount || 0,\n      'Data Source': lead.source || 'Unknown',\n      'Scored At': lead.scoredAt || new Date().toISOString()\n    }\n  };\n});"
+      },
+      "id": "export-format-2",
+      "name": "Format for Excel",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        300,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "toFile",
+        "fileFormat": "xlsx",
+        "options": {
+          "fileName": "=ai_leads_{{ $now.format('yyyy-MM-dd_HHmmss') }}.xlsx",
+          "sheetName": "AI Automation Leads",
+          "headerRow": true
+        }
+      },
+      "id": "export-excel-3",
+      "name": "Convert to Excel",
+      "type": "n8n-nodes-base.spreadsheetFile",
+      "typeVersion": 4.5,
+      "position": [
+        500,
+        300
+      ],
+      "notes": "Creates Excel .xlsx file with all leads"
+    },
+    {
+      "parameters": {
+        "operation": "write",
+        "fileName": "=/data/exports/ai_leads_{{ $now.format('yyyy-MM-dd_HHmmss') }}.xlsx",
+        "options": {}
+      },
+      "id": "export-save-file-4",
+      "name": "Save to Disk",
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1,
+      "position": [
+        700,
+        200
+      ],
+      "notes": "Saves file to local disk"
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "name": "=AI_Leads_{{ $now.format('yyyy-MM-dd') }}",
+        "folderId": {
+          "__rl": true,
+          "value": "root",
+          "mode": "list"
+        },
+        "options": {}
+      },
+      "id": "export-gdrive-5",
+      "name": "Upload to Google Drive",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        700,
+        400
+      ],
+      "notes": "Optional: Upload to Google Drive",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "gdrive-cred",
+          "name": "Google Drive"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $env.NOTIFICATION_EMAIL || 'leads@yourcompany.com' }}",
+        "subject": "=New AI Leads Report - {{ $now.format('yyyy-MM-dd') }}",
+        "emailType": "html",
+        "html": "=<h2>AI Lead Generation Report</h2>\n<p>A new batch of AI automation leads has been generated.</p>\n<p><strong>Report Details:</strong></p>\n<ul>\n  <li>Total Leads: {{ $('Format for Excel').all().length }}</li>\n  <li>Generated: {{ $now.format('MMMM d, yyyy HH:mm') }}</li>\n</ul>\n<p>The Excel file is attached to this email.</p>\n<p>Best regards,<br>AI Lead Generation System</p>",
+        "options": {
+          "attachments": "data"
+        }
+      },
+      "id": "export-email-6",
+      "name": "Email Report",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        700,
+        600
+      ],
+      "notes": "Optional: Email the Excel report",
+      "credentials": {
+        "smtp": {
+          "id": "smtp-cred",
+          "name": "SMTP"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Generate export summary\nconst items = $('Format for Excel').all();\nconst excelFile = $('Convert to Excel').first();\n\nconst totalLeads = items.length;\nconst highScoreLeads = items.filter(i => (i.json['Lead Score'] || 0) >= 7).length;\nconst mediumScoreLeads = items.filter(i => {\n  const score = i.json['Lead Score'] || 0;\n  return score >= 5 && score < 7;\n}).length;\n\nreturn [{\n  json: {\n    totalLeads: totalLeads,\n    qualifiedLeads: highScoreLeads + mediumScoreLeads,\n    highPriorityLeads: highScoreLeads,\n    mediumPriorityLeads: mediumScoreLeads,\n    fileName: excelFile?.binary?.data?.fileName || 'ai_leads.xlsx',\n    fileSize: excelFile?.binary?.data?.fileSize || 'Unknown',\n    timestamp: new Date().toISOString(),\n    exportComplete: true\n  }\n}];"
+      },
+      "id": "export-summary-7",
+      "name": "Generate Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        940,
+        400
+      ]
+    }
+  ],
+  "connections": {
+    "Workflow Input": {
+      "main": [
+        [
+          {
+            "node": "Format for Excel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format for Excel": {
+      "main": [
+        [
+          {
+            "node": "Convert to Excel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convert to Excel": {
+      "main": [
+        [
+          {
+            "node": "Save to Disk",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Upload to Google Drive",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Email Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save to Disk": {
+      "main": [
+        [
+          {
+            "node": "Generate Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload to Google Drive": {
+      "main": [
+        [
+          {
+            "node": "Generate Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email Report": {
+      "main": [
+        [
+          {
+            "node": "Generate Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1.0.0",
+  "meta": {
+    "instanceId": "export-workflow"
+  },
+  "id": "export-workflow",
+  "tags": [
+    {
+      "name": "lead-generation",
+      "id": "tag-1"
+    },
+    {
+      "name": "export",
+      "id": "tag-2"
+    }
+  ]
+}

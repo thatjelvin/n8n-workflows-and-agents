@@ -1,0 +1,495 @@
+{
+  "name": "AI Lead Generation System",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "a1b2c3d4-manual-trigger",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * 1"
+            }
+          ]
+        }
+      },
+      "id": "a1b2c3d5-schedule-trigger",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        100,
+        500
+      ],
+      "notes": "Runs every Monday at 9 AM"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Configuration for lead generation\nconst config = {\n  targetNiches: [\n    'physiotherapy clinic',\n    'podiatry clinic',\n    'chiropractic clinic',\n    'garage door repair',\n    'pest control service',\n    'pool cleaning service',\n    'immigration consultant',\n    'tutoring center',\n    'tax preparer',\n    'dental clinic',\n    'veterinary clinic',\n    'landscaping service',\n    'hvac repair',\n    'plumbing service',\n    'roofing contractor',\n    'window cleaning',\n    'carpet cleaning',\n    'home inspection',\n    'real estate photography',\n    'moving company'\n  ],\n  targetLocations: [\n    'New York, NY',\n    'Los Angeles, CA',\n    'Chicago, IL',\n    'Houston, TX',\n    'Phoenix, AZ',\n    'Philadelphia, PA',\n    'San Antonio, TX',\n    'San Diego, CA',\n    'Dallas, TX',\n    'Austin, TX'\n  ],\n  maxResultsPerSearch: 20,\n  rateLimitDelayMs: 2000,\n  minLeadScore: 5\n};\n\n// Generate search queries\nconst searchQueries = [];\nfor (const niche of config.targetNiches) {\n  for (const location of config.targetLocations) {\n    searchQueries.push({\n      query: `${niche} near ${location}`,\n      niche: niche,\n      location: location,\n      maxResults: config.maxResultsPerSearch\n    });\n  }\n}\n\nreturn [{\n  json: {\n    config: config,\n    searchQueries: searchQueries,\n    totalQueries: searchQueries.length,\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "a1b2c3d6-config-node",
+      "name": "Setup Configuration",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        320,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "condition-1",
+              "leftValue": "={{ $json.searchQueries.length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d7-if-queries",
+      "name": "Has Search Queries?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        520,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "searchQueries",
+        "options": {}
+      },
+      "id": "a1b2c3d8-split-queries",
+      "name": "Split Queries",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        720,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "a1b2c3d9-batch-queries",
+      "name": "Batch Queries",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        920,
+        400
+      ],
+      "notes": "Process one query at a time for rate limiting"
+    },
+    {
+      "parameters": {
+        "operation": "executeWorkflow",
+        "workflowId": {
+          "__rl": true,
+          "value": "search-workflow",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "a1b2c3da-search-subworkflow",
+      "name": "Execute Search",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [
+        1120,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "unit": "seconds",
+        "value": 2
+      },
+      "id": "a1b2c3db-rate-limit",
+      "name": "Rate Limit Delay",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1320,
+        400
+      ],
+      "notes": "Respectful rate limiting between API calls"
+    },
+    {
+      "parameters": {
+        "operation": "executeWorkflow",
+        "workflowId": {
+          "__rl": true,
+          "value": "enrichment-workflow",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "a1b2c3dc-enrichment-subworkflow",
+      "name": "Enrich Lead Data",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [
+        1520,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeWorkflow",
+        "workflowId": {
+          "__rl": true,
+          "value": "scoring-workflow",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "a1b2c3dd-scoring-subworkflow",
+      "name": "AI Lead Scoring",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [
+        1720,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Deduplicate leads based on business name and email\nconst items = $input.all();\nconst seen = new Map();\nconst uniqueLeads = [];\n\nfor (const item of items) {\n  const lead = item.json;\n  const key = `${(lead.businessName || '').toLowerCase()}_${(lead.email || '').toLowerCase()}`;\n  \n  if (!seen.has(key) && lead.businessName) {\n    seen.set(key, true);\n    uniqueLeads.push({\n      json: {\n        ...lead,\n        deduplicatedAt: new Date().toISOString()\n      }\n    });\n  }\n}\n\n// Sort by lead score (highest first)\nuniqueLeads.sort((a, b) => (b.json.leadScore || 0) - (a.json.leadScore || 0));\n\nreturn uniqueLeads;"
+      },
+      "id": "a1b2c3de-dedup-node",
+      "name": "Deduplicate & Sort",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1920,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "filter-score",
+              "leftValue": "={{ $json.leadScore }}",
+              "rightValue": 5,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a1b2c3df-filter-score",
+      "name": "Filter by Score >= 5",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2,
+      "position": [
+        2120,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeWorkflow",
+        "workflowId": {
+          "__rl": true,
+          "value": "export-workflow",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "a1b2c3e0-export-subworkflow",
+      "name": "Export to Excel",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [
+        2320,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "message": "=Lead generation completed!\n\nTotal leads found: {{ $json.totalLeads }}\nHigh-quality leads (score >= 5): {{ $json.qualifiedLeads }}\nExcel file: {{ $json.fileName }}\nTimestamp: {{ $json.timestamp }}",
+        "additionalFields": {}
+      },
+      "id": "a1b2c3e1-slack-notify",
+      "name": "Notify on Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.1,
+      "position": [
+        2520,
+        400
+      ],
+      "notes": "Optional: Configure Slack credentials"
+    },
+    {
+      "parameters": {
+        "errorMessage": "Lead generation workflow encountered an error"
+      },
+      "id": "a1b2c3e2-error-handler",
+      "name": "Error Handler",
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [
+        1720,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Log error details for debugging\nconst error = $input.first();\nconsole.log('Error in lead generation:', JSON.stringify(error.json, null, 2));\n\nreturn [{\n  json: {\n    errorType: 'workflow_error',\n    message: error.json.message || 'Unknown error',\n    timestamp: new Date().toISOString(),\n    context: error.json\n  }\n}];"
+      },
+      "id": "a1b2c3e3-error-logger",
+      "name": "Log Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1520,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Store processed leads in memory for aggregation\nconst processedLeads = $input.all().map(item => item.json);\n\nreturn [{\n  json: {\n    leads: processedLeads,\n    count: processedLeads.length,\n    processedAt: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "a1b2c3e4-aggregate-leads",
+      "name": "Aggregate Leads",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2120,
+        260
+      ]
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Setup Configuration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Setup Configuration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Setup Configuration": {
+      "main": [
+        [
+          {
+            "node": "Has Search Queries?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Search Queries?": {
+      "main": [
+        [
+          {
+            "node": "Split Queries",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Queries": {
+      "main": [
+        [
+          {
+            "node": "Batch Queries",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Batch Queries": {
+      "main": [
+        [
+          {
+            "node": "Execute Search",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Deduplicate & Sort",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Search": {
+      "main": [
+        [
+          {
+            "node": "Rate Limit Delay",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rate Limit Delay": {
+      "main": [
+        [
+          {
+            "node": "Enrich Lead Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enrich Lead Data": {
+      "main": [
+        [
+          {
+            "node": "AI Lead Scoring",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Lead Scoring": {
+      "main": [
+        [
+          {
+            "node": "Batch Queries",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Deduplicate & Sort": {
+      "main": [
+        [
+          {
+            "node": "Filter by Score >= 5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter by Score >= 5": {
+      "main": [
+        [
+          {
+            "node": "Export to Excel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Export to Excel": {
+      "main": [
+        [
+          {
+            "node": "Notify on Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Error": {
+      "main": [
+        [
+          {
+            "node": "Error Handler",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "versionId": "1.0.0",
+  "meta": {
+    "instanceId": "ai-lead-gen-main",
+    "templateCredsSetupCompleted": false
+  },
+  "id": "ai-lead-generation-main",
+  "tags": [
+    {
+      "name": "lead-generation",
+      "id": "tag-1"
+    },
+    {
+      "name": "ai-automation",
+      "id": "tag-2"
+    },
+    {
+      "name": "scraping",
+      "id": "tag-3"
+    }
+  ]
+}

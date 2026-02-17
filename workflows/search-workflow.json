@@ -1,0 +1,333 @@
+{
+  "name": "Search Workflow - Lead Discovery",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "search-trigger-1",
+      "name": "Workflow Input",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Extract search parameters from input\nconst input = $input.first().json;\n\nconst searchParams = {\n  query: input.query || 'physiotherapy clinic near New York',\n  niche: input.niche || 'physiotherapy clinic',\n  location: input.location || 'New York, NY',\n  maxResults: input.maxResults || 20\n};\n\nreturn [{\n  json: {\n    ...searchParams,\n    placesApiUrl: `https://maps.googleapis.com/maps/api/place/textsearch/json`,\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "search-setup-2",
+      "name": "Prepare Search Query",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        300,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.placesApiUrl }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "={{ $json.query }}"
+            },
+            {
+              "name": "key",
+              "value": "={{ $credentials.apiKey }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000,
+          "response": {
+            "response": {
+              "fullResponse": false
+            }
+          }
+        }
+      },
+      "id": "search-places-api-3",
+      "name": "Google Places API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        500,
+        200
+      ],
+      "notes": "Requires Google Places API key",
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "google-places-cred",
+          "name": "Google Places API"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.yelp.com/v3/businesses/search",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "term",
+              "value": "={{ $json.niche }}"
+            },
+            {
+              "name": "location",
+              "value": "={{ $json.location }}"
+            },
+            {
+              "name": "limit",
+              "value": "={{ $json.maxResults }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "search-yelp-api-4",
+      "name": "Yelp API Search",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        500,
+        400
+      ],
+      "notes": "Requires Yelp Fusion API key",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "yelp-api-cred",
+          "name": "Yelp API"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://serpapi.com/search",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "engine",
+              "value": "google_maps"
+            },
+            {
+              "name": "q",
+              "value": "={{ $json.query }}"
+            },
+            {
+              "name": "type",
+              "value": "search"
+            },
+            {
+              "name": "api_key",
+              "value": "={{ $credentials.apiKey }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "search-serpapi-5",
+      "name": "SerpAPI Google Maps",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        500,
+        600
+      ],
+      "notes": "Alternative: SerpAPI for Google Maps data",
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "serpapi-cred",
+          "name": "SerpAPI"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Normalize and combine results from different sources\nconst items = $input.all();\nconst normalizedLeads = [];\n\nfor (const item of items) {\n  const data = item.json;\n  \n  // Handle Google Places API results\n  if (data.results && Array.isArray(data.results)) {\n    for (const place of data.results) {\n      normalizedLeads.push({\n        businessName: place.name || '',\n        address: place.formatted_address || '',\n        phone: '', // Requires additional API call\n        website: '', // Requires additional API call\n        placeId: place.place_id || '',\n        rating: place.rating || 0,\n        reviewCount: place.user_ratings_total || 0,\n        source: 'google_places',\n        rawData: place\n      });\n    }\n  }\n  \n  // Handle Yelp API results\n  if (data.businesses && Array.isArray(data.businesses)) {\n    for (const biz of data.businesses) {\n      normalizedLeads.push({\n        businessName: biz.name || '',\n        address: biz.location ? \n          `${biz.location.address1 || ''}, ${biz.location.city || ''}, ${biz.location.state || ''} ${biz.location.zip_code || ''}` : '',\n        phone: biz.phone || biz.display_phone || '',\n        website: biz.url || '',\n        yelpId: biz.id || '',\n        rating: biz.rating || 0,\n        reviewCount: biz.review_count || 0,\n        categories: (biz.categories || []).map(c => c.title).join(', '),\n        source: 'yelp',\n        rawData: biz\n      });\n    }\n  }\n  \n  // Handle SerpAPI Google Maps results\n  if (data.local_results && Array.isArray(data.local_results)) {\n    for (const result of data.local_results) {\n      normalizedLeads.push({\n        businessName: result.title || '',\n        address: result.address || '',\n        phone: result.phone || '',\n        website: result.website || '',\n        placeId: result.place_id || '',\n        rating: result.rating || 0,\n        reviewCount: result.reviews || 0,\n        source: 'serpapi_maps',\n        rawData: result\n      });\n    }\n  }\n}\n\n// Return normalized leads\nreturn normalizedLeads.map(lead => ({ json: lead }));"
+      },
+      "id": "search-normalize-6",
+      "name": "Normalize Search Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        740,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "filter-name",
+              "leftValue": "={{ $json.businessName }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "search-filter-7",
+      "name": "Filter Valid Results",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2,
+      "position": [
+        940,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Add search metadata to each lead\nconst items = $input.all();\nconst inputData = $('Prepare Search Query').first().json;\n\nreturn items.map(item => ({\n  json: {\n    ...item.json,\n    nicheCategory: inputData.niche,\n    searchLocation: inputData.location,\n    searchQuery: inputData.query,\n    discoveredAt: new Date().toISOString()\n  }\n}));"
+      },
+      "id": "search-metadata-8",
+      "name": "Add Search Metadata",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1140,
+        400
+      ]
+    }
+  ],
+  "connections": {
+    "Workflow Input": {
+      "main": [
+        [
+          {
+            "node": "Prepare Search Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Search Query": {
+      "main": [
+        [
+          {
+            "node": "Google Places API",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Yelp API Search",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "SerpAPI Google Maps",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Places API": {
+      "main": [
+        [
+          {
+            "node": "Normalize Search Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Yelp API Search": {
+      "main": [
+        [
+          {
+            "node": "Normalize Search Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SerpAPI Google Maps": {
+      "main": [
+        [
+          {
+            "node": "Normalize Search Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Search Results": {
+      "main": [
+        [
+          {
+            "node": "Filter Valid Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Valid Results": {
+      "main": [
+        [
+          {
+            "node": "Add Search Metadata",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1.0.0",
+  "meta": {
+    "instanceId": "search-workflow"
+  },
+  "id": "search-workflow",
+  "tags": [
+    {
+      "name": "lead-generation",
+      "id": "tag-1"
+    },
+    {
+      "name": "search",
+      "id": "tag-2"
+    }
+  ]
+}
